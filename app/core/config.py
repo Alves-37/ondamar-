@@ -3,7 +3,7 @@ import os
 
 class Settings(BaseSettings):
     # Default to Railway internal URL; will be overridden by .env or environment vars if present
-    DATABASE_URL: str = "postgresql://postgres:yjZJwfkbcNTlNUNQUjbHoRpUtVtGVkpQ@postgres.railway.internal:5432/railway"
+    DATABASE_URL: str = "postgresql://postgres:aQLGNNBpaevsDHmZSyNJMqbmyvXtuoux@postgres.railway.internal:5432/railway"
     DATABASE_PUBLIC_URL: str | None = None
     JWT_SECRET: str = "a_very_secret_key_that_should_be_changed"
     JWT_ALGORITHM: str = "HS256"

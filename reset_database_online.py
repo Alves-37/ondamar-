@@ -11,18 +11,26 @@ import sys
 from datetime import datetime
 import subprocess
 
-# Carregar variáveis de ambiente
+# Carregar variáveis de ambiente (se houver .env)
 load_dotenv()
 
 class DatabaseReset:
     def __init__(self):
-        self.database_url = os.getenv('DATABASE_URL')
+        # Preferir URL pública quando disponível (ambiente local)
+        public_url = os.getenv('DATABASE_PUBLIC_URL')
+        internal_url = os.getenv('DATABASE_URL')
+
+        self.database_url = public_url or internal_url
         if not self.database_url:
-            raise ValueError("DATABASE_URL não encontrada no arquivo .env")
-        
-        # Converter para asyncpg format se necessário
+            raise ValueError(
+                "Nenhuma variável de conexão encontrada. Defina DATABASE_PUBLIC_URL ou DATABASE_URL."
+            )
+
+        # Converter para formato aceito pelo asyncpg se necessário
         if self.database_url.startswith('postgresql+asyncpg://'):
             self.database_url = self.database_url.replace('postgresql+asyncpg://', 'postgresql://')
+        if self.database_url.startswith('postgresql+psycopg2://'):
+            self.database_url = self.database_url.replace('postgresql+psycopg2://', 'postgresql://')
     
     async def connect(self, retries: int = 3, base_delay: float = 1.5):
         """Conectar ao banco PostgreSQL com retry e timeout."""
@@ -328,10 +336,9 @@ async def main():
     action = sys.argv[1].lower()
     
     # Verificar se o arquivo .env existe
+    # .env é opcional: podemos usar variáveis do ambiente do shell
     if not os.path.exists('.env'):
-        print("❌ Arquivo .env não encontrado!")
-        print("   Certifique-se de que está no diretório backend/")
-        return
+        print("⚠️  Arquivo .env não encontrado. Continuando com variáveis de ambiente do sistema (se definidas)...")
     
     reset_db = DatabaseReset()
     
