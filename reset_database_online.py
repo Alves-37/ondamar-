@@ -110,7 +110,8 @@ class DatabaseReset:
                 'vendas', 
                 'produtos',
                 'clientes',
-                'users'
+                'usuarios',  # nome real da tabela no schema
+                'users'      # legado (caso exista em deploys antigos)
             ]
             
             for table in tables_to_drop:
@@ -131,6 +132,13 @@ class DatabaseReset:
         print("🏗️  Recriando tabelas...")
         
         try:
+            # Garantir extensão para geração de UUIDs
+            try:
+                await self.conn.execute("""CREATE EXTENSION IF NOT EXISTS "pgcrypto";""")
+            except Exception as ext_err:
+                print(f"⚠️  Não foi possível garantir extensão pgcrypto automaticamente: {ext_err}")
+                print("    Caso o banco não possua suporte a gen_random_uuid(), habilite manualmente.")
+            
             # Tabela usuarios
             await self.conn.execute("""
                 CREATE TABLE usuarios (
@@ -140,8 +148,12 @@ class DatabaseReset:
                     senha_hash VARCHAR(255) NOT NULL,
                     is_admin BOOLEAN DEFAULT FALSE,
                     ativo BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    nivel INTEGER DEFAULT 1,
+                    salario NUMERIC(12,2) DEFAULT 0,
+                    pode_abastecer BOOLEAN DEFAULT FALSE,
+                    pode_gerenciar_despesas BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             print("   - Tabela usuarios criada")
@@ -153,15 +165,16 @@ class DatabaseReset:
                     codigo VARCHAR(50) UNIQUE NOT NULL,
                     nome VARCHAR(255) NOT NULL,
                     descricao TEXT,
-                    preco_custo DECIMAL(10,2) NOT NULL,
-                    preco_venda DECIMAL(10,2) NOT NULL,
-                    estoque DECIMAL(10,3) DEFAULT 0,
-                    estoque_minimo DECIMAL(10,3) DEFAULT 0,
-                    ativo BOOLEAN DEFAULT TRUE,
+                    preco_custo NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    preco_venda NUMERIC(12,2) NOT NULL DEFAULT 0,
+                    estoque NUMERIC(12,3) NOT NULL DEFAULT 0,
+                    estoque_minimo NUMERIC(12,3) NOT NULL DEFAULT 0,
+                    categoria_id INTEGER,
                     venda_por_peso BOOLEAN DEFAULT FALSE,
                     unidade_medida VARCHAR(10) DEFAULT 'un',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ativo BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             print("   - Tabela produtos criada")
@@ -171,12 +184,15 @@ class DatabaseReset:
                 CREATE TABLE clientes (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     nome VARCHAR(255) NOT NULL,
-                    nuit VARCHAR(50),
+                    documento VARCHAR(50),
                     telefone VARCHAR(50),
                     email VARCHAR(255),
                     endereco TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    especial BOOLEAN DEFAULT FALSE,
+                    desconto_divida NUMERIC(12,2) DEFAULT 0,
+                    ativo BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             print("   - Tabela clientes criada")
@@ -185,14 +201,25 @@ class DatabaseReset:
             await self.conn.execute("""
                 CREATE TABLE vendas (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    usuario_id UUID NOT NULL REFERENCES usuarios(id),
-                    total DECIMAL(10,2) NOT NULL,
+                    usuario_id UUID REFERENCES usuarios(id),
+                    cliente_id UUID REFERENCES clientes(id),
+                    total NUMERIC(12,2) NOT NULL,
+                    desconto NUMERIC(12,2) DEFAULT 0,
                     forma_pagamento VARCHAR(50) NOT NULL,
-                    valor_recebido DECIMAL(10,2),
-                    troco DECIMAL(10,2),
-                    data_venda TIMESTAMP NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    valor_recebido NUMERIC(12,2),
+                    troco NUMERIC(12,2),
+                    data_venda TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR(20) DEFAULT 'Ativa',
+                    motivo_alteracao TEXT,
+                    alterado_por UUID REFERENCES usuarios(id),
+                    data_alteracao TIMESTAMPTZ,
+                    origem VARCHAR(50) DEFAULT 'venda_direta',
+                    valor_original_divida NUMERIC(12,2) DEFAULT 0,
+                    desconto_aplicado_divida NUMERIC(12,2) DEFAULT 0,
+                    observacoes TEXT,
+                    cancelada BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             print("   - Tabela vendas criada")
@@ -202,12 +229,18 @@ class DatabaseReset:
                 CREATE TABLE itens_venda (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     venda_id UUID NOT NULL REFERENCES vendas(id) ON DELETE CASCADE,
-                    produto_id VARCHAR(50) NOT NULL,
-                    quantidade DECIMAL(10,3) NOT NULL,
-                    preco_unitario DECIMAL(10,2) NOT NULL,
-                    subtotal DECIMAL(10,2) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    produto_id UUID NOT NULL REFERENCES produtos(id),
+                    quantidade NUMERIC(12,3) NOT NULL,
+                    peso_kg NUMERIC(12,3) DEFAULT 0,
+                    preco_unitario NUMERIC(12,2) NOT NULL,
+                    preco_custo_unitario NUMERIC(12,2) DEFAULT 0,
+                    subtotal NUMERIC(12,2) NOT NULL,
+                    status VARCHAR(20),
+                    motivo_alteracao TEXT,
+                    alterado_por UUID REFERENCES usuarios(id),
+                    data_alteracao TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             print("   - Tabela itens_venda criada")

@@ -94,6 +94,31 @@ async def get_produtos(db: AsyncSession = Depends(get_db_session)):
             detail=f"Erro ao buscar produtos: {str(e)}"
         )
 
+
+@router.get("/estoque-baixo", response_model=List[ProdutoResponse])
+async def get_produtos_estoque_baixo(db: AsyncSession = Depends(get_db_session)):
+    """Lista produtos ativos com estoque em ou abaixo do mínimo.
+
+    Regra alinhada com o cliente PDV3 local:
+    estoque <= estoque_minimo AND ativo = True
+    """
+    try:
+        result = await db.execute(
+            select(Produto)
+            .where(
+                Produto.ativo == True,
+                Produto.estoque <= Produto.estoque_minimo,
+            )
+            .order_by(Produto.nome)
+        )
+        produtos = result.scalars().all()
+        return [ProdutoResponse.from_orm(p) for p in produtos]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar produtos com estoque baixo: {str(e)}"
+        )
+
 @router.get("/{produto_uuid}", response_model=ProdutoResponse)
 async def get_produto(produto_uuid: str, db: AsyncSession = Depends(get_db_session)):
     """Busca produto por UUID."""
